@@ -1,0 +1,7 @@
+[project]
+name = "photo-organiser"
+version = "0.1.0"
+description = "Organise and make sense of all your photos."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
