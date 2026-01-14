@@ -1,0 +1,183 @@
+"""Configuration management for photo organizer application."""
+
+import os
+from pathlib import Path
+from typing import List, Optional
+
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
+
+class DatabaseSettings(BaseSettings):
+    """Database configuration settings."""
+
+    model_config = {"env_prefix": "DATABASE_"}
+
+    url: str = Field(default="sqlite:///./data/photo_organizer.db")
+    echo: bool = Field(default=False)
+    pool_size: int = Field(default=5)
+    max_overflow: int = Field(default=10)
+
+
+class ChromaDBSettings(BaseSettings):
+    """ChromaDB configuration settings."""
+
+    model_config = {"env_prefix": "CHROMA_"}
+
+    path: Path = Field(default=Path("./data/chroma_db"))
+    collection_name: str = Field(default="face_embeddings")
+    embedding_dimension: int = Field(default=512)
+
+
+class ProcessingSettings(BaseSettings):
+    """Photo processing configuration settings."""
+
+    model_config = {"env_prefix": "PROCESSING_"}
+
+    batch_size: int = Field(default=32)
+    max_workers: int = Field(default=4)
+    memory_threshold_gb: float = Field(default=8.0)
+    processing_timeout_seconds: int = Field(default=300)
+
+    # Face detection settings
+    face_detector_backend: str = Field(default="retinaface")
+    face_model_name: str = Field(default="Facenet512")
+    face_confidence_threshold: float = Field(default=0.9)
+
+    # Content classification settings
+    content_confidence_threshold: float = Field(default=0.7)
+    text_confidence_threshold: float = Field(default=0.8)
+
+
+class FileStorageSettings(BaseSettings):
+    """File storage configuration settings."""
+
+    model_config = {"env_prefix": "STORAGE_"}
+
+    photo_root_dir: Path = Field(default=Path("./data/photos"))
+    thumbnail_dir: Path = Field(default=Path("./data/thumbnails"))
+    export_dir: Path = Field(default=Path("./data/exports"))
+    temp_dir: Path = Field(default=Path("./data/temp"))
+
+    # File size limits
+    max_photo_size_mb: int = Field(default=100)
+    max_thumbnail_size_mb: int = Field(default=5)
+
+    # Supported formats
+    allowed_image_formats: List[str] = Field(
+        default=[".jpg", ".jpeg", ".png", ".heic", ".webp", ".tiff", ".bmp"]
+    )
+
+
+class LoggingSettings(BaseSettings):
+    """Logging configuration settings."""
+
+    model_config = {"env_prefix": "LOG_"}
+
+    level: str = Field(default="INFO")
+    file_path: Path = Field(default=Path("./logs/app.log"))
+    error_file_path: Path = Field(default=Path("./logs/error.log"))
+    max_file_size_mb: int = Field(default=100)
+    retention_days: int = Field(default=30)
+
+
+class SecuritySettings(BaseSettings):
+    """Security configuration settings."""
+
+    model_config = {"env_prefix": "SECURITY_"}
+
+    secret_key: str = Field(default="your-secret-key-change-in-production")
+    algorithm: str = Field(default="HS256")
+    access_token_expire_minutes: int = Field(default=30)
+
+    # CORS settings
+    allowed_origins: List[str] = Field(
+        default=["http://localhost:3000", "http://127.0.0.1:3000"]
+    )
+
+
+class PerformanceSettings(BaseSettings):
+    """Performance optimization settings."""
+
+    model_config = {"env_prefix": "PERFORMANCE_"}
+
+    # Caching
+    cache_ttl_seconds: int = Field(default=3600)
+    max_cache_size: int = Field(default=1000)
+
+    # GPU settings
+    use_gpu: bool = Field(default=False)
+    gpu_memory_fraction: float = Field(default=0.8)
+
+    # Concurrency
+    max_concurrent_uploads: int = Field(default=5)
+    request_timeout_seconds: int = Field(default=60)
+
+
+class Settings(BaseSettings):
+    """Main application settings combining all sub-settings."""
+
+    # Application info
+    app_name: str = Field(default="Photo Organizer")
+    version: str = Field(default="0.1.0")
+    debug: bool = Field(default=False)
+
+    # Sub-settings
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    chroma_db: ChromaDBSettings = Field(default_factory=ChromaDBSettings)
+    processing: ProcessingSettings = Field(default_factory=ProcessingSettings)
+    storage: FileStorageSettings = Field(default_factory=FileStorageSettings)
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    performance: PerformanceSettings = Field(default_factory=PerformanceSettings)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._ensure_directories()
+        self._validate_settings()
+
+    def _ensure_directories(self) -> None:
+        """Ensure all required directories exist."""
+        directories = [
+            self.database.url.replace("sqlite:///", "").rsplit("/", 1)[0],
+            self.chroma_db.path,
+            self.storage.photo_root_dir,
+            self.storage.thumbnail_dir,
+            self.storage.export_dir,
+            self.storage.temp_dir,
+            self.logging.file_path.parent,
+            self.logging.error_file_path.parent,
+        ]
+
+        for directory in directories:
+            if directory and not isinstance(directory, Path):
+                directory = Path(directory)
+            if directory and not directory.exists():
+                directory.mkdir(parents=True, exist_ok=True)
+
+    def _validate_settings(self) -> None:
+        """Validate critical settings."""
+        # Check if secret key is still the default
+        if self.security.secret_key == "your-secret-key-change-in-production":
+            if not self.debug:
+                raise ValueError(
+                    "SECURITY_SECRET_KEY must be set in production environment"
+                )
+
+        # Validate memory threshold
+        if self.processing.memory_threshold_gb < 1:
+            raise ValueError("MEMORY_THRESHOLD_GB must be at least 1 GB")
+
+        # Validate batch size
+        if self.processing.batch_size < 1:
+            raise ValueError("MAX_BATCH_SIZE must be at least 1")
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+    }
+
+
+# Global settings instance
+settings = Settings()
